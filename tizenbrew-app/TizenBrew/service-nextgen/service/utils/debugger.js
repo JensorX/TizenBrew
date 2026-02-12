@@ -19,7 +19,7 @@ function startDebugging(port, queuedEvents, clientConn, ip, mdl, inDebug, appCon
             client.on('Runtime.executionContextCreated', (msg) => {
                 if (!mdl.evaluateScriptOnDocumentStart && mdl.name !== '') {
                     const modUrl = 'https://cdn.jsdelivr.net/' + (mdl.versionedFullName || mdl.fullName) + '/' + mdl.mainFile + '?v=' + Date.now();
-                    const expression = 'const script = document.createElement("script"); script.src = "' + modUrl + '"; document.head.appendChild(script);';
+                    const expression = 'var s = document.createElement("script"); s.src = "' + modUrl + '"; (document.head || document.documentElement).appendChild(s);';
                     client.Runtime.evaluate({ expression, contextId: msg.context.id });
                 } else if (mdl.name !== '' && mdl.evaluateScriptOnDocumentStart) {
                     const cacheKey = mdl.versionedFullName || mdl.fullName;
