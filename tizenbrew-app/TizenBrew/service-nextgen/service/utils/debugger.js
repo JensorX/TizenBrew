@@ -18,18 +18,36 @@ function startDebugging(port, queuedEvents, clientConn, ip, mdl, inDebug, appCon
 
             client.on('Runtime.executionContextCreated', (msg) => {
                 if (!mdl.evaluateScriptOnDocumentStart && mdl.name !== '') {
-                    const modUrl = 'https://cdn.jsdelivr.net/' + (mdl.versionedFullName || mdl.fullName) + '/' + mdl.mainFile + '?v=' + Date.now();
+                    // Use local proxy to handle upstream fetching and correct MIME types
+                    const modUrl = 'http://127.0.0.1:8081/module/' + encodeURIComponent(mdl.fullName) + '/' + mdl.mainFile + '?v=' + Date.now();
                     const expression = 'var s = document.createElement("script"); s.src = "' + modUrl + '"; (document.head || document.documentElement).appendChild(s);';
                     client.Runtime.evaluate({ expression, contextId: msg.context.id });
                 } else if (mdl.name !== '' && mdl.evaluateScriptOnDocumentStart) {
                     const cacheKey = mdl.versionedFullName || mdl.fullName;
-                    const cache = modulesCache.get(cacheKey);
                     const clientConnection = clientConn.get('wsConn');
+
+                    // Construct Raw GitHub URL for server-side fetch
+                    let fetchUrl;
+                    if (mdl.fullName.split('/').length === 2 && !mdl.fullName.includes('@')) {
+                        // Likely user/repo, assume main
+                        fetchUrl = `https://raw.githubusercontent.com/${mdl.fullName}/main/${mdl.mainFile}`;
+                    } else if (mdl.versionedFullName && mdl.versionedFullName.includes('@')) {
+                        const [repo, tag] = mdl.versionedFullName.split('@');
+                        fetchUrl = `https://raw.githubusercontent.com/${repo}/${tag}/${mdl.mainFile}`;
+                    } else {
+                        // Fallback to jsDelivr if format is weird
+                        fetchUrl = `https://cdn.jsdelivr.net/${cacheKey}/${mdl.mainFile}`;
+                    }
+                    // Append cache buster
+                    fetchUrl += `?v=${Date.now()}`;
+
+                    const cache = modulesCache.get(cacheKey);
+
                     if (cache) {
                         client.Page.addScriptToEvaluateOnNewDocument({ expression: cache });
                         sendClientInformation(clientConn, clientConnection.Event(Events.LaunchModule, mdl.name));
                     } else {
-                        fetch(`https://cdn.jsdelivr.net/${cacheKey}/${mdl.mainFile}`).then(res => res.text()).then(modFile => {
+                        fetch(fetchUrl).then(res => res.text()).then(modFile => {
                             modulesCache.set(cacheKey, modFile);
                             sendClientInformation(clientConn, clientConnection.Event(Events.LaunchModule, mdl.name));
                             client.Page.addScriptToEvaluateOnNewDocument({ expression: modFile });
